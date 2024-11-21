@@ -5,9 +5,13 @@ use futures::task::noop_waker;
 async fn main() {
     env_logger::init();
 
+    let mut config = diesel_async::pooled_connection::ManagerConfig::default();
+    config.recycling_method =
+        diesel_async::pooled_connection::RecyclingMethod::CustomQuery(RECYCLING_QUERY.into());
+
     let config = diesel_async::pooled_connection::AsyncDieselConnectionManager::<
         diesel_async::AsyncPgConnection,
-    >::new(std::env::var("DATABASE_URL").unwrap());
+    >::new_with_config(std::env::var("DATABASE_URL").unwrap(), config);
 
     let pool = diesel_async::pooled_connection::deadpool::Pool::builder(config)
         .wait_timeout(Some(std::time::Duration::from_secs(1)))
@@ -43,3 +47,8 @@ async fn main() {
         .await
         .unwrap();
 }
+
+const RECYCLING_QUERY: &str = "DO $$ DECLARE clean bool; BEGIN
+    SELECT statement_timestamp() = transaction_timestamp() INTO clean;
+    ASSERT clean, 'dirty-conn';
+END $$;";
